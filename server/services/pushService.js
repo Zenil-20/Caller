@@ -19,7 +19,23 @@ function init() {
     return false;
   }
 
-  webpush.setVapidDetails(env.push.subject, env.push.publicKey, env.push.privateKey);
+  // setVapidDetails throws on a malformed key or subject. Left unhandled that
+  // propagates out of startup and kills the process, so one mistyped
+  // environment variable would take the whole calling app offline rather than
+  // just disabling push. Degrade instead: calls keep working, and the log says
+  // exactly what to fix.
+  try {
+    webpush.setVapidDetails(env.push.subject, env.push.publicKey, env.push.privateKey);
+  } catch (err) {
+    configured = false;
+    logger.error(
+      `Web Push disabled — VAPID configuration is invalid: ${err.message}. `
+      + 'Check VAPID_SUBJECT is a mailto:/https: URL and that the key pair is the one generated together '
+      + 'by web-push. Calls still work; they just will not ring closed devices.',
+    );
+    return false;
+  }
+
   configured = true;
   logger.info('Web Push configured — offline devices can be woken.');
   return true;

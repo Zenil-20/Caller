@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0f1621" />
+  <meta name="description" content="gians — private one-to-one internet voice calling" />
+  <title>gians · Voice Calls</title>
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📞</text></svg>" />
+  <link rel="stylesheet" href="/vendor/leaflet.css" />
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+
+<!-- ========================================================================
+     AUTH
+     ==================================================================== -->
+<section class="screen screen--auth is-active" id="screen-auth">
+  <div class="auth">
+    <div class="auth__brand">
+      <div class="auth__logo">📞</div>
+      <h1>gians</h1>
+      <p>Private voice calls over the internet</p>
+    </div>
+
+    <div class="tabs" role="tablist">
+      <button class="tabs__btn is-active" data-auth-tab="login" role="tab">Sign in</button>
+      <button class="tabs__btn" data-auth-tab="register" role="tab">Create account</button>
+    </div>
+
+    <form class="form is-active" id="form-login" novalidate>
+      <label class="field">
+        <span class="field__label">Username or phone</span>
+        <input type="text" name="identifier" autocomplete="username" placeholder="alice or +919812345001" required />
+      </label>
+      <label class="field">
+        <span class="field__label">Password</span>
+        <input type="password" name="password" autocomplete="current-password" placeholder="••••••••" required />
+      </label>
+      <p class="form__error" data-error></p>
+      <button type="submit" class="btn btn--primary btn--block">Sign in</button>
+    </form>
+
+    <form class="form" id="form-register" novalidate>
+      <label class="field">
+        <span class="field__label">Username</span>
+        <input type="text" name="username" autocomplete="username" placeholder="alice" required />
+        <span class="field__hint">Letters, numbers, dot and underscore. 3–30 characters.</span>
+      </label>
+      <label class="field">
+        <span class="field__label">Display name</span>
+        <input type="text" name="displayName" autocomplete="name" placeholder="Alice Kapoor" />
+      </label>
+      <label class="field">
+        <span class="field__label">Mobile number <em>(optional)</em></span>
+        <input type="tel" name="phone" autocomplete="tel" placeholder="+919812345001" />
+        <span class="field__hint">International format, starting with +</span>
+      </label>
+      <label class="field">
+        <span class="field__label">Password</span>
+        <input type="password" name="password" autocomplete="new-password" placeholder="At least 8 characters" required />
+      </label>
+      <p class="form__error" data-error></p>
+      <button type="submit" class="btn btn--primary btn--block">Create account</button>
+    </form>
+  </div>
+</section>
+
+<!-- ========================================================================
+     FIRST-RUN SETUP — consent is asked here, never assumed
+     ==================================================================== -->
+<section class="screen screen--auth" id="screen-setup">
+  <div class="auth">
+    <div class="auth__brand">
+      <div class="auth__logo">👋</div>
+      <h1>Welcome<span id="setup-name"></span></h1>
+      <p>Two quick choices. Both are optional and you can change them any time in Settings.</p>
+    </div>
+
+    <div class="card">
+      <h3>📍 Share your location with family</h3>
+      <p class="card__note">
+        Lets the people you choose see where you are on the map — useful for
+        knowing everyone got home safely.
+      </p>
+      <label class="toggle">
+        <input type="checkbox" id="setup-location" />
+        <span>Share my location</span>
+      </label>
+      <div id="setup-location-detail" hidden>
+        <label class="toggle">
+          <input type="radio" name="setup-scope" value="contacts" checked class="radio" />
+          <span>Everyone in my contacts</span>
+        </label>
+        <label class="toggle">
+          <input type="radio" name="setup-scope" value="selected" class="radio" />
+          <span>Only people I pick later</span>
+        </label>
+      </div>
+      <p class="card__note setup__warn">
+        Your position only updates while gians is open on your screen — a web app
+        cannot track you in the background.
+      </p>
+    </div>
+
+    <div class="card">
+      <h3>🔔 Ring this device for calls</h3>
+      <p class="card__note">
+        Lets calls ring even when gians is closed or your screen is locked.
+        Without this, calls only ring while the app is open.
+      </p>
+      <label class="toggle">
+        <input type="checkbox" id="setup-ringing" />
+        <span>Enable call ringing</span>
+      </label>
+    </div>
+
+    <button class="btn btn--primary btn--block" id="btn-setup-done">Continue</button>
+    <button class="btn btn--ghost btn--block" id="btn-setup-skip">Skip for now</button>
+  </div>
+</section>
+
+<!-- ========================================================================
+     PER-PERSON LOCATION DETAIL
+     ==================================================================== -->
+<section class="screen screen--auth" id="screen-person">
+  <div class="auth">
+    <button class="btn btn--ghost person__back" id="btn-person-back">‹ Back</button>
+
+    <div class="person__head">
+      <div class="avatar avatar--xl" id="person-avatar">?</div>
+      <h2 class="call__name" id="person-name">Unknown</h2>
+      <p class="call__sub" id="person-handle">@unknown</p>
+    </div>
+
+    <div id="person-map" class="map map--tall"></div>
+
+    <dl class="kv" id="person-facts"></dl>
+
+    <div class="person__actions">
+      <button class="btn btn--call btn--block" id="btn-person-call">📞 Call</button>
+      <a class="btn btn--ghost btn--block" id="btn-person-external" target="_blank" rel="noopener noreferrer">
+        Open in maps
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================================
+     MAIN APP SHELL
+     ==================================================================== -->
+<section class="screen screen--app" id="screen-app">
+  <header class="topbar">
+    <div class="topbar__identity">
+      <div class="avatar avatar--sm" id="my-avatar">?</div>
+      <div class="topbar__text">
+        <strong id="my-name">…</strong>
+        <small id="my-handle">@…</small>
+      </div>
+    </div>
+    <div class="topbar__actions">
+      <span class="conn-pill" id="conn-pill" title="Connection status">
+        <i class="dot"></i><span data-label>Connecting</span>
+      </span>
+    </div>
+  </header>
+
+  <main class="pages">
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="page is-active" id="page-recents">
+      <div class="page__head">
+        <h2>Recent</h2>
+        <button class="btn btn--ghost btn--icon" id="btn-refresh-recents" title="Refresh">⟳</button>
+      </div>
+      <div class="stats-strip" id="stats-strip"></div>
+      <ul class="list" id="list-recents"></ul>
+      <p class="empty" id="empty-recents" hidden>No calls yet. Find someone in Contacts and say hello.</p>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="page" id="page-contacts">
+      <div class="page__head">
+        <h2>Contacts</h2>
+      </div>
+      <div class="search">
+        <input type="search" id="input-search" placeholder="Search by username, name or phone" autocomplete="off" />
+      </div>
+      <div id="search-results-wrap" hidden>
+        <h3 class="list__title">Search results</h3>
+        <ul class="list" id="list-search"></ul>
+        <p class="empty" id="empty-search" hidden>Nobody found.</p>
+      </div>
+      <h3 class="list__title">My contacts</h3>
+      <ul class="list" id="list-contacts"></ul>
+      <p class="empty" id="empty-contacts" hidden>No contacts yet. Search above and tap ＋ to add someone.</p>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="page" id="page-dialer">
+      <div class="page__head"><h2>Dialer</h2></div>
+      <div class="dialer">
+        <input type="text" class="dialer__display" id="dialer-display" placeholder="+91 98123 45001" inputmode="tel" />
+        <p class="dialer__hint" id="dialer-hint">Enter a phone number or username</p>
+        <div class="keypad" id="keypad">
+          <button class="key" data-key="1"><b>1</b><small></small></button>
+          <button class="key" data-key="2"><b>2</b><small>ABC</small></button>
+          <button class="key" data-key="3"><b>3</b><small>DEF</small></button>
+          <button class="key" data-key="4"><b>4</b><small>GHI</small></button>
+          <button class="key" data-key="5"><b>5</b><small>JKL</small></button>
+          <button class="key" data-key="6"><b>6</b><small>MNO</small></button>
+          <button class="key" data-key="7"><b>7</b><small>PQRS</small></button>
+          <button class="key" data-key="8"><b>8</b><small>TUV</small></button>
+          <button class="key" data-key="9"><b>9</b><small>WXYZ</small></button>
+          <button class="key" data-key="*"><b>*</b><small></small></button>
+          <button class="key" data-key="0"><b>0</b><small>+</small></button>
+          <button class="key" data-key="#"><b>#</b><small></small></button>
+        </div>
+        <div class="dialer__actions">
+          <button class="btn btn--call btn--round" id="btn-dial" title="Call">📞</button>
+          <button class="btn btn--ghost btn--round" id="btn-backspace" title="Delete">⌫</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="page" id="page-family">
+      <div class="page__head">
+        <h2>Family</h2>
+        <button class="btn btn--ghost btn--icon" id="btn-recenter" title="Fit everyone on screen">⌖</button>
+      </div>
+
+      <div class="share-bar" id="share-bar">
+        <div class="share-bar__text">
+          <strong id="share-title">Location sharing is off</strong>
+          <small id="share-sub">Nobody can see where you are</small>
+        </div>
+        <label class="toggle toggle--bare">
+          <input type="checkbox" id="toggle-sharing" />
+        </label>
+      </div>
+
+      <div id="map" class="map"></div>
+      <p class="map__note" id="map-note"></p>
+
+      <h3 class="list__title">Sharing with you</h3>
+      <ul class="list" id="list-locations"></ul>
+      <p class="empty" id="empty-locations">Nobody is sharing their location with you yet.</p>
+    </div>
+
+    <!-- ---------------------------------------------------------------- -->
+    <div class="page" id="page-settings">
+      <div class="page__head"><h2>Settings</h2></div>
+
+      <div class="card">
+        <h3>Profile</h3>
+        <label class="field">
+          <span class="field__label">Display name</span>
+          <input type="text" id="set-displayName" maxlength="60" />
+        </label>
+        <label class="field">
+          <span class="field__label">About</span>
+          <input type="text" id="set-about" maxlength="140" />
+        </label>
+        <button class="btn btn--primary" id="btn-save-profile">Save profile</button>
+      </div>
+
+      <div class="card">
+        <h3>Audio processing</h3>
+        <p class="card__note">Applied to your microphone on the next call.</p>
+        <label class="toggle">
+          <input type="checkbox" id="set-echoCancellation" checked />
+          <span>Echo cancellation</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="set-noiseSuppression" checked />
+          <span>Noise suppression</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="set-autoGainControl" checked />
+          <span>Automatic gain control</span>
+        </label>
+      </div>
+
+      <div class="card">
+        <h3>Ring this device</h3>
+        <p class="card__note">
+          Lets calls ring even when gians is closed or your screen is locked.
+        </p>
+        <div class="push-state" id="push-state">
+          <span class="push-state__dot"></span>
+          <span id="push-state-label">Checking…</span>
+        </div>
+        <button class="btn btn--primary btn--block" id="btn-enable-push">Enable call ringing</button>
+        <p class="card__note" id="push-hint"></p>
+      </div>
+
+      <div class="card">
+        <h3>Alerts</h3>
+        <label class="toggle">
+          <input type="checkbox" id="set-ringtoneEnabled" checked />
+          <span>Ringtone</span>
+        </label>
+        <label class="toggle">
+          <input type="checkbox" id="set-vibrationEnabled" checked />
+          <span>Vibration</span>
+        </label>
+      </div>
+
+      <div class="card">
+        <h3>Diagnostics</h3>
+        <dl class="kv" id="diagnostics"></dl>
+        <button class="btn btn--ghost" id="btn-mic-test">Test microphone access</button>
+      </div>
+
+      <button class="btn btn--danger btn--block" id="btn-logout">Sign out</button>
+      <p class="version">gians v1.0.0</p>
+    </div>
+  </main>
+
+  <nav class="tabbar">
+    <button class="tabbar__btn is-active" data-page="recents">
+      <span class="tabbar__icon">🕘</span><span>Recent</span>
+      <i class="badge" id="badge-missed" hidden></i>
+    </button>
+    <button class="tabbar__btn" data-page="contacts">
+      <span class="tabbar__icon">👥</span><span>Contacts</span>
+    </button>
+    <button class="tabbar__btn" data-page="dialer">
+      <span class="tabbar__icon">⌨️</span><span>Dialer</span>
+    </button>
+    <button class="tabbar__btn" data-page="family">
+      <span class="tabbar__icon">📍</span><span>Family</span>
+    </button>
+    <button class="tabbar__btn" data-page="settings">
+      <span class="tabbar__icon">⚙️</span><span>Settings</span>
+    </button>
+  </nav>
+</section>
+
+<!-- ========================================================================
+     INCOMING CALL
+     ==================================================================== -->
+<section class="screen screen--call screen--incoming" id="screen-incoming">
+  <div class="call">
+    <p class="call__label">Incoming voice call</p>
+    <div class="avatar avatar--xl pulse" id="incoming-avatar">?</div>
+    <h2 class="call__name" id="incoming-name">Unknown</h2>
+    <p class="call__sub" id="incoming-handle">@unknown</p>
+
+    <div class="call__answer">
+      <button class="btn btn--reject btn--round btn--round-lg" id="btn-reject" title="Decline">✕</button>
+      <button class="btn btn--call btn--round btn--round-lg shake" id="btn-accept" title="Accept">📞</button>
+    </div>
+    <p class="call__hint">Swipe up or tap to answer</p>
+  </div>
+</section>
+
+<!-- ========================================================================
+     ACTIVE / OUTGOING CALL
+     ==================================================================== -->
+<section class="screen screen--call" id="screen-call">
+  <div class="call">
+    <div class="call__quality" id="call-quality" hidden>
+      <span class="bars"><i></i><i></i><i></i><i></i></span>
+      <span data-label>Checking…</span>
+    </div>
+
+    <div class="avatar avatar--xl" id="call-avatar">?</div>
+    <h2 class="call__name" id="call-name">Unknown</h2>
+    <p class="call__status" id="call-status">Calling…</p>
+    <p class="call__timer" id="call-timer" hidden>00:00</p>
+
+    <div class="vu" id="vu-meter" hidden>
+      <span class="vu__label">You</span>
+      <div class="vu__track"><i id="vu-local"></i></div>
+      <span class="vu__label">Them</span>
+      <div class="vu__track"><i id="vu-remote"></i></div>
+    </div>
+
+    <p class="call__peerstate" id="peer-state" hidden></p>
+
+    <div class="call__controls">
+      <button class="ctrl" id="btn-mute">
+        <span class="ctrl__icon">🎤</span><span class="ctrl__label">Mute</span>
+      </button>
+      <button class="ctrl" id="btn-speaker">
+        <span class="ctrl__icon">🔈</span><span class="ctrl__label">Speaker</span>
+      </button>
+      <button class="ctrl" id="btn-stats-toggle">
+        <span class="ctrl__icon">📊</span><span class="ctrl__label">Stats</span>
+      </button>
+    </div>
+
+    <pre class="stats-panel" id="stats-panel" hidden></pre>
+
+    <button class="btn btn--reject btn--round btn--round-lg call__end" id="btn-hangup" title="End call">📵</button>
+  </div>
+</section>
+
+<!-- Remote audio sink. autoplay + playsinline are required for mobile Safari. -->
+<audio id="remote-audio" autoplay playsinline></audio>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<div class="overlay" id="overlay-loading" hidden>
+  <div class="spinner"></div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/vendor/leaflet.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/geo.js"></script>
+<script src="/js/push.js"></script>
+<script src="/js/store.js"></script>
+<script src="/js/audio.js"></script>
+<script src="/js/webrtc.js"></script>
+<script src="/js/socket.js"></script>
+<script src="/js/map.js"></script>
+<script src="/js/ui.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Real-time one-to-one VoIP calling application built with Node.js, Express, Socket.IO, WebRTC and MongoDB",
   "main": "server/index.js",
+  "//devDependencies": "Leaflet ships to the browser from public/vendor/, which is committed. It is only needed to refresh that copy (npm run vendor:leaflet), so it stays out of the production image.",
   "type": "commonjs",
   "engines": {
     "node": ">=18.0.0"
@@ -10,7 +11,10 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "seed": "node server/scripts/seed.js"
+    "seed": "node server/scripts/seed.js",
+    "vendor:leaflet": "node -e \"const fs=require('fs'),p='node_modules/leaflet/dist';fs.mkdirSync('public/vendor',{recursive:true});fs.copyFileSync(p+'/leaflet.js','public/vendor/leaflet.js');fs.copyFileSync(p+'/leaflet.css','public/vendor/leaflet.css');fs.cpSync(p+'/images','public/vendor/images',{recursive:true});console.log('leaflet vendored')\"",
+    "docker:build": "docker build -t gians:latest .",
+    "docker:up": "docker compose up -d --build"
   },
   "keywords": [
     "voip",
@@ -30,9 +34,11 @@
     "express-validator": "^7.1.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
-    "leaflet": "^1.9.4",
     "mongoose": "^8.5.1",
     "socket.io": "^4.7.5",
     "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "leaflet": "^1.9.4"
   }
 }

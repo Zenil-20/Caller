@@ -461,8 +461,28 @@ IP. A TTL index on `expiresAt` lets MongoDB expire dead sessions on its own.
 
 - **[docs/API.md](docs/API.md)** — every REST endpoint and Socket.IO event,
   with request/response shapes and error codes.
+- **[docs/MOBILE.md](docs/MOBILE.md)** — getting it onto phones: PWA install,
+  building a real Android `.apk`, and why `.exe` is not an option.
+- **[docs/HOSTING.md](docs/HOSTING.md)** — sizing, one-VPS deploy with Docker +
+  Caddy, TURN bandwidth, backups, go-live checklist.
 - **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — HTTPS, coturn, nginx, systemd,
   Docker, Atlas, scaling past one process.
+
+## Deploying
+
+```bash
+cp .env.example .env      # fill in secrets
+docker compose up -d --build
+```
+
+That starts the app, MongoDB and a coturn TURN relay. Put Caddy or nginx in
+front for TLS — see [docs/HOSTING.md](docs/HOSTING.md). Family members then
+install it from the browser (**Settings → Install app**, or Share → Add to Home
+Screen on iPhone).
+
+> **`.exe` files do not run on phones.** Android needs `.apk`, iOS needs
+> `.ipa`. The realistic paths — PWA install, or a free Bubblewrap-built APK —
+> are in [docs/MOBILE.md](docs/MOBILE.md).
 
 ---
 

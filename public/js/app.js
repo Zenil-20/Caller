@@ -24,6 +24,8 @@
     sharing: null,
     /** userId whose location detail screen is currently open, if any. */
     viewingPerson: null,
+    /** Deferred beforeinstallprompt event, if the browser offered one. */
+    installPrompt: null,
     /** Guards against double-answering from two rapid taps. */
     answering: false,
   };
@@ -42,6 +44,7 @@
     wireSettings();
     wireSetup();
     wirePerson();
+    wireInstall();
 
     window.API.onUnauthorized(() => {
       toast('Your session expired. Please sign in again.', 'error');
@@ -1496,6 +1499,63 @@
     dot.dataset.tone = tone;
     btn.hidden = !showButton;
     hint.textContent = hintText;
+  }
+
+  /**
+   * Install prompt.
+   *
+   * Chromium fires `beforeinstallprompt` and lets us trigger the native
+   * install sheet on demand. iOS has no such event — Safari only installs via
+   * Share → Add to Home Screen — so there we show instructions instead of a
+   * button that could not work.
+   */
+  function wireInstall() {
+    const card = $('#card-install');
+    const btn = $('#btn-install');
+    const note = $('#install-note');
+
+    const standalone = window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+
+    if (standalone) return; // Already installed; nothing to offer.
+
+    const isIos = /iP(hone|ad|od)/.test(navigator.userAgent);
+    if (isIos) {
+      card.hidden = false;
+      btn.hidden = true;
+      note.textContent = 'On iPhone: tap the Share button, then "Add to Home Screen". '
+        + 'This is also required for calls to ring when gians is closed.';
+      return;
+    }
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      // Chrome shows its own mini-bar unless we take over the prompt.
+      e.preventDefault();
+      state.installPrompt = e;
+      card.hidden = false;
+    });
+
+    btn.addEventListener('click', async () => {
+      const prompt = state.installPrompt;
+      if (!prompt) {
+        toast('Use your browser menu → "Install app" to add gians to this device.');
+        return;
+      }
+
+      prompt.prompt();
+      const { outcome } = await prompt.userChoice;
+      state.installPrompt = null;
+
+      if (outcome === 'accepted') {
+        card.hidden = true;
+        toast('gians installed', 'success');
+      }
+    });
+
+    window.addEventListener('appinstalled', () => {
+      card.hidden = true;
+      state.installPrompt = null;
+    });
   }
 
   function wireSettings() {

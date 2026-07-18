@@ -1,0 +1,60 @@
+# ---------------------------------------------------------------------------
+# gians — full stack: app, database, TURN relay, and TLS termination.
+#
+#   cp .env.example .env     # fill in secrets first
+#   docker compose up -d --build
+#
+# TURN runs with network_mode: host on purpose. It allocates a wide UDP port
+# range, and Docker's userland proxy cannot forward thousands of ports without
+# falling over — this is the standard way to run coturn in Compose.
+# ---------------------------------------------------------------------------
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGODB_URI: mongodb://mongo:27017/gians_voip
+    expose:
+      - "4000"
+    ports:
+      - "4000:4000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    command: ["--bind_ip_all"]
+    volumes:
+      - mongo-data:/data/db
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # Required for calls between two phones on mobile data. Without a relay,
+  # symmetric NAT silently blocks the media path even though signalling works.
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./deploy/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+
+volumes:
+  mongo-data:

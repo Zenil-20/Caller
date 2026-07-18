@@ -7,7 +7,13 @@
   <meta name="description" content="gians — private one-to-one internet voice calling" />
   <title>gians · Voice Calls</title>
   <link rel="manifest" href="/manifest.json" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📞</text></svg>" />
+  <link rel="icon" href="/icons/icon-192.png" />
+  <!-- iOS ignores the manifest for these, so they must be declared here. -->
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="gians" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <link rel="stylesheet" href="/vendor/leaflet.css" />
   <link rel="stylesheet" href="/css/styles.css" />
 </head>
@@ -281,6 +287,15 @@
           <input type="checkbox" id="set-autoGainControl" checked />
           <span>Automatic gain control</span>
         </label>
+      </div>
+
+      <div class="card" id="card-install" hidden>
+        <h3>📲 Install gians</h3>
+        <p class="card__note" id="install-note">
+          Adds gians to your home screen so it opens like a normal app — and on
+          iPhone, it is the only way calls can ring when the app is closed.
+        </p>
+        <button class="btn btn--primary btn--block" id="btn-install">Install app</button>
       </div>
 
       <div class="card">

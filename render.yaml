@@ -1,0 +1,82 @@
+# ---------------------------------------------------------------------------
+# Render blueprint — deploys gians on the free tier, no card required.
+#
+#   1. Push this repo to GitHub
+#   2. Render dashboard -> New -> Blueprint -> pick the repo
+#   3. Paste MONGODB_URI when prompted (MongoDB Atlas M0 is free, no card)
+#
+# Render's free web services sleep after 15 minutes idle. See
+# docs/FREE-HOSTING.md for the free keep-awake trick, which matters here: a
+# sleeping server cannot ring anybody.
+# ---------------------------------------------------------------------------
+
+services:
+  - type: web
+    name: gians
+    runtime: node
+    plan: free
+    region: singapore          # closest free region to India
+    branch: main
+    buildCommand: npm ci --omit=dev
+    startCommand: node server/index.js
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Render injects PORT; the app already reads it.
+      - key: PORT
+        value: 10000
+
+      # Supplied at deploy time — never commit a real connection string.
+      - key: MONGODB_URI
+        sync: false
+
+      # Must exactly match the public origin, or Socket.IO rejects handshakes.
+      # Set this to https://<your-service>.onrender.com after the first deploy.
+      - key: CLIENT_ORIGIN
+        sync: false
+
+      # Render generates strong values for these on first deploy.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+
+      - key: JWT_ACCESS_TTL
+        value: 15m
+      - key: JWT_REFRESH_TTL
+        value: 30d
+
+      - key: STUN_URLS
+        value: stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302
+
+      # TURN — REQUIRED for calls between two phones on mobile data.
+      #
+      # Render's free tier exposes one HTTP port and no UDP range, so coturn
+      # cannot run here; TURN must come from elsewhere. The old free
+      # `openrelay.metered.ca` endpoint is dead (verified: TCP connect fails),
+      # so do not use it — anything relying on it fails silently, with calls
+      # showing "Connected" and carrying no audio.
+      #
+      # Get free credentials from metered.ca (50 GB/month, email signup, no
+      # card) or expressturn.com, then set these three in the Render dashboard:
+      - key: TURN_URLS
+        sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
+
+      # Generate locally and paste in:
+      #   node -e "console.log(require('web-push').generateVAPIDKeys())"
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
+
+      - key: RING_TIMEOUT_MS
+        value: 45000

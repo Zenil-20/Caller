@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# Caddy — TLS termination for gians
+#
+# Caddy obtains and renews a Let's Encrypt certificate automatically, and its
+# defaults already handle WebSocket upgrades and long-lived connections. That
+# matters here: the most common way an nginx config breaks calling is a 60 s
+# proxy_read_timeout silently cutting the signalling socket mid-conversation.
+#
+# DOMAIN and ACME_EMAIL come from .env via docker compose. Caddy reads them
+# with the {$VAR} syntax below.
+# ---------------------------------------------------------------------------
+
+{
+	# Let's Encrypt uses this only to warn about expiring certificates.
+	email {$ACME_EMAIL:admin@example.com}
+}
+
+{$DOMAIN} {
+	reverse_proxy app:4000
+
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		# The app sets its own CSP via Helmet; don't duplicate it here.
+	}
+
+	# The service worker must never be served stale, or a deployed fix cannot
+	# reach devices that already installed the app.
+	@sw path /sw.js
+	header @sw Cache-Control "no-cache, no-store, must-revalidate"
+
+	# Fingerprint-free static assets: short cache, revalidated.
+	@static path /icons/* /vendor/* /css/* /js/*
+	header @static Cache-Control "public, max-age=3600"
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

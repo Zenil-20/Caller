@@ -461,6 +461,8 @@ IP. A TTL index on `expiresAt` lets MongoDB expire dead sessions on its own.
 
 - **[docs/API.md](docs/API.md)** — every REST endpoint and Socket.IO event,
   with request/response shapes and error codes.
+- **[docs/FREE-HOSTING.md](docs/FREE-HOSTING.md)** — running it permanently for
+  free with **no credit card**: Render + Atlas + free TURN, or self-hosting.
 - **[docs/MOBILE.md](docs/MOBILE.md)** — getting it onto phones: PWA install,
   building a real Android `.apk`, and why `.exe` is not an option.
 - **[docs/HOSTING.md](docs/HOSTING.md)** — sizing, one-VPS deploy with Docker +

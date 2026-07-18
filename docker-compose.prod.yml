@@ -1,0 +1,97 @@
+# ---------------------------------------------------------------------------
+# gians — production stack for a single free-tier VM.
+#
+#   app    : the Node server
+#   mongo  : database (local, so no Atlas account is required)
+#   caddy  : automatic HTTPS via Let's Encrypt
+#   coturn : TURN relay, without which calls fail on mobile data
+#
+# Usage:
+#   cp .env.example .env      # fill in DOMAIN and the secrets
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Everything here runs within the resources of a free Oracle Cloud / GCP
+# always-free instance.
+# ---------------------------------------------------------------------------
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGODB_URI: mongodb://mongo:27017/gians_voip
+      # Must match the public origin exactly, or Socket.IO rejects the handshake.
+      CLIENT_ORIGIN: https://${DOMAIN}
+    expose:
+      - "4000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    # Bound to the internal network only — never published to the host.
+    expose:
+      - "27017"
+    volumes:
+      - mongo-data:/data/db
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data      # certificates — persist or you WILL hit rate limits
+      - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+    depends_on:
+      - app
+
+  # Host networking is required: coturn allocates a wide UDP range and Docker's
+  # userland proxy cannot forward thousands of ports.
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./deploy/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  mongo-data:
+  caddy-data:
+  caddy-config:
+  caddy-logs:

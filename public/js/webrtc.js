@@ -467,6 +467,51 @@ window.RTC = (function rtc() {
     return false;
   }
 
+  /**
+   * Gathers ICE candidates against the configured servers WITHOUT placing a
+   * call, and reports which kinds were obtainable.
+   *
+   * This exists because the failure it detects is otherwise invisible: with no
+   * working TURN relay, a call between two phones on mobile data rings, both
+   * sides display "Connected", and no audio ever passes. Being able to see
+   * "relay: 0" turns a baffling silent failure into a one-line answer.
+   */
+  async function testConnectivity(iceServers, { timeoutMs = 12000 } = {}) {
+    const result = { host: 0, srflx: 0, relay: 0, relayVia: null, errors: [], durationMs: 0 };
+    const started = Date.now();
+
+    // Deliberately a separate connection — never disturb a call in progress.
+    const probe = new RTCPeerConnection({ iceServers: iceServers || [] });
+
+    try {
+      probe.onicecandidateerror = (event) => {
+        // 701 is the generic "server unreachable"; keep it short and readable.
+        result.errors.push(`${event.errorCode}${event.errorText ? ` ${event.errorText}` : ''}`);
+      };
+
+      probe.createDataChannel('connectivity-probe');
+      await probe.setLocalDescription(await probe.createOffer());
+
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, timeoutMs);
+        probe.onicecandidate = (event) => {
+          if (!event.candidate) { clearTimeout(timer); resolve(); return; }
+          const type = event.candidate.type;
+          if (result[type] !== undefined) result[type] += 1;
+          if (type === 'relay' && !result.relayVia) {
+            result.relayVia = event.candidate.address || null;
+          }
+        };
+      });
+    } finally {
+      try { probe.close(); } catch { /* already closed */ }
+      result.durationMs = Date.now() - started;
+      result.errors = [...new Set(result.errors)].slice(0, 3);
+    }
+
+    return result;
+  }
+
   function getLocalStream() { return localStream; }
   function getRemoteStream() { return remoteStream; }
   function getPeerConnection() { return pc; }
@@ -516,6 +561,7 @@ window.RTC = (function rtc() {
     setMuted,
     isMuted,
     setSpeaker,
+    testConnectivity,
     getLocalStream,
     getRemoteStream,
     getPeerConnection,

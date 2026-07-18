@@ -28,7 +28,20 @@
     installPrompt: null,
     /** Guards against double-answering from two rapid taps. */
     answering: false,
+    /**
+     * Set while a push has started the ringtone but the matching socket event
+     * has not arrived yet: `{ callId, timer }`. See onPushIncomingCall.
+     */
+    pushRing: null,
   };
+
+  /**
+   * How long to keep ringing on the strength of a push alone. Long enough for a
+   * throttled socket to reconnect and deliver the call, short enough that a ring
+   * with nothing behind it cannot outlast the call it was announcing (the server
+   * gives up on an unanswered call well before this).
+   */
+  const PUSH_RING_GRACE_MS = 15000;
 
   const remoteAudio = $('#remote-audio');
 
@@ -153,7 +166,78 @@
       // (the app is only just waking up), so remember the intent.
       state.pendingLaunch = { callId: message.callId, action: message.action };
       applyPendingLaunch();
+      return;
     }
+
+    if (message.type === 'push-incoming-call') {
+      onPushIncomingCall(message);
+      return;
+    }
+
+    if (message.type === 'push-call-cancelled') {
+      // Only silences a ring this push path started. A call the socket has since
+      // delivered is owned by the normal state machine, which has its own
+      // call:ended handling and must not be second-guessed from here.
+      if (message.callId && state.pushRing?.callId !== message.callId) return;
+      if (!state.pushRing) return;
+
+      clearTimeout(state.pushRing.timer);
+      state.pushRing = null;
+      window.AudioKit.stopRinging();
+      window.AudioKit.vibrate(0);
+    }
+  }
+
+  /**
+   * A push says a call is ringing. When this page is backgrounded, this is the
+   * only route to a real ringtone: the service worker that received the push
+   * has no audio API, so the sound has to be made here.
+   *
+   * The push frequently beats the socket event, and on a throttled background
+   * connection the socket event may never arrive at all, so this cannot assume
+   * Store.state.call already exists.
+   */
+  function onPushIncomingCall({ callId, expiresAt }) {
+    if (!state.sessionActive) return;
+    if (expiresAt && Date.now() > expiresAt) return;
+
+    const call = window.Store.state.call;
+
+    // Socket got there first — onIncomingCall is already ringing this exact
+    // call, and restarting the pattern would only stutter it.
+    if (call?.callId === callId) return;
+
+    // Busy on a different call. The server decides what happens to this one;
+    // ringing over a live call would be wrong either way.
+    if (call) return;
+
+    const settings = window.Store.state.user?.settings || {};
+    if (settings.ringtoneEnabled !== false) {
+      // Best-effort: resume() only succeeds if this page has had a gesture at
+      // some point, which it has if the user ever signed in or placed a call.
+      window.AudioKit.unlock();
+      window.AudioKit.startRingtone();
+    }
+    if (settings.vibrationEnabled !== false) {
+      window.AudioKit.vibrate([400, 250, 400, 250, 400]);
+    }
+
+    // Ringing on a push alone is a promise the socket still has to keep, so
+    // hurry it along. Backgrounded socket.io can be sitting on a throttled
+    // backoff timer for longer than the call will ring.
+    const socket = window.Signal.raw();
+    if (socket && !socket.connected) socket.connect();
+
+    // If the call never materialises — cancelled, expired, or the socket stayed
+    // down — stop. onIncomingCall disarms this the moment it takes over.
+    clearTimeout(state.pushRing?.timer);
+    const timer = setTimeout(() => {
+      if (state.pushRing?.callId !== callId) return;
+      state.pushRing = null;
+      window.AudioKit.stopRinging();
+    }, PUSH_RING_GRACE_MS);
+
+    state.pushRing = { callId, timer };
   }
 
   /**
@@ -929,6 +1013,15 @@
      ======================================================================= */
 
   function onIncomingCall({ callId, from, iceServers }) {
+    // The socket has caught up, so the push-driven ringtone has done its job and
+    // its watchdog must be disarmed — otherwise it fires mid-call and silences a
+    // ringtone (or a tone) this function legitimately started. Unconditional and
+    // first: every path out of here, including the early returns below, needs it.
+    if (state.pushRing) {
+      clearTimeout(state.pushRing.timer);
+      state.pushRing = null;
+    }
+
     // Already busy locally — the server should have prevented this, but a race
     // is possible. Decline immediately rather than showing a second screen.
     if (window.Store.state.call) {
@@ -1306,6 +1399,13 @@
     stopTimer();
     stopVad();
 
+    // Covers sign-out and any teardown that happens while a push-driven ring is
+    // still pending, so its watchdog cannot fire against a later call.
+    if (state.pushRing) {
+      clearTimeout(state.pushRing.timer);
+      state.pushRing = null;
+    }
+
     window.AudioKit.stopRinging();
     window.AudioKit.vibrate(0);
 
@@ -1636,6 +1736,67 @@
         // Must run even if reading track settings threw, or the microphone
         // stays live with no call in progress.
         window.RTC.stopLocalStream();
+      }
+    });
+
+    $('#btn-net-test').addEventListener('click', async () => {
+      const box = $('#net-result');
+      const btn = $('#btn-net-test');
+
+      btn.disabled = true;
+      btn.textContent = 'Testing…';
+      box.hidden = false;
+      box.dataset.verdict = '';
+      box.innerHTML = '<strong>Checking how calls can reach other people…</strong>';
+
+      try {
+        // Always re-fetch: the server may have been reconfigured since login.
+        const { iceServers } = await window.API.iceServers();
+        state.iceServers = iceServers;
+
+        const hasTurnConfigured = iceServers.some((s) => String(s.urls).includes('turn:') || String(s.urls).includes('turns:'));
+        const r = await window.RTC.testConnectivity(iceServers);
+
+        let verdict; let headline; const notes = [];
+
+        if (r.relay > 0) {
+          verdict = 'good';
+          headline = '✅ Calls should work anywhere';
+          notes.push(`Relay reachable${r.relayVia ? ` via ${r.relayVia}` : ''} — calls work on mobile data too.`);
+        } else if (r.srflx > 0 && !hasTurnConfigured) {
+          verdict = 'warn';
+          headline = '⚠️ Calls will work on Wi-Fi, but may fail on mobile data';
+          notes.push('No TURN relay is configured on the server.');
+          notes.push('Symptom: the call rings, both sides say "Connected", and neither hears anything.');
+        } else if (r.srflx > 0) {
+          verdict = 'warn';
+          headline = '⚠️ TURN is configured but not responding';
+          notes.push('Calls will work on Wi-Fi and are likely to fail elsewhere.');
+          notes.push('Check the TURN credentials have not expired or run out of quota.');
+        } else if (r.host > 0) {
+          verdict = 'bad';
+          headline = '❌ Only this device is reachable';
+          notes.push('Neither STUN nor TURN answered — a firewall is probably blocking UDP.');
+        } else {
+          verdict = 'bad';
+          headline = '❌ No network candidates at all';
+          notes.push('Check your internet connection.');
+        }
+
+        notes.push(`Found ${r.host} local, ${r.srflx} public, ${r.relay} relay candidates in ${(r.durationMs / 1000).toFixed(1)}s.`);
+        if (r.errors.length) notes.push(`Server errors: ${r.errors.join(', ')}`);
+
+        box.dataset.verdict = verdict;
+        box.innerHTML = `<strong>${window.UI.esc(headline)}</strong><ul>${
+          notes.map((n) => `<li>${window.UI.esc(n)}</li>`).join('')
+        }</ul>`;
+      } catch (err) {
+        box.dataset.verdict = 'bad';
+        box.innerHTML = `<strong>Could not run the test</strong><ul><li>${window.UI.esc(err.message)}</li></ul>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Test call connectivity';
+        renderDiagnostics();
       }
     });
 

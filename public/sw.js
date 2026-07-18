@@ -7,8 +7,51 @@
 'use strict';
 
 const CALL_TAG = 'gians-incoming-call';
+
+/**
+ * A closed app can only be reached through showNotification, and a notification
+ * alerts once. Re-posting it under the same tag with `renotify` makes Android
+ * sound and vibrate again, so repeating that on an interval is the only way to
+ * approximate a ring that keeps going until it is answered.
+ *
+ * 3s is deliberate: Android rate-limits notifications that update faster than
+ * about once a second by dropping the alert, which would leave the ring silent.
+ */
+const RING_REPEAT_MS = 3000;
+
+/**
+ * Chrome only keeps a service worker alive for a bounded time per push, even
+ * with waitUntil pending, and killing it mid-loop is worse than stopping
+ * cleanly. The server rings for 45s (RING_TIMEOUT_MS); we cover the first 30 of
+ * it and leave the notification on screen for the rest.
+ */
+const RING_MAX_MS = 30000;
+
+/**
+ * Calls whose ring has been called off — answered on another device, or the
+ * caller hung up. Module scope is the right lifetime here: it lives exactly as
+ * long as the worker running the ring loop that reads it, and a worker restart
+ * ends that loop anyway.
+ */
+const cancelledCalls = new Set();
+
+/**
+ * Entries can never be removed on completion — a cancel may arrive after the
+ * ring loop has already finished, and must still be remembered — so the set is
+ * capped instead. Insertion order makes the oldest entry the first one out, and
+ * anything that old belongs to a call that ended long ago.
+ */
+function markCancelled(callId) {
+  if (!callId) return;
+  cancelledCalls.add(callId);
+  while (cancelledCalls.size > 50) {
+    cancelledCalls.delete(cancelledCalls.values().next().value);
+  }
+}
+
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 // Bump this to force a fresh install and purge the previous cache.
-const CACHE = 'gians-shell-v2';
+const CACHE = 'gians-shell-v3';
 
 // The minimum needed to render the call screen when the app is opened from a
 // notification while the network is slow or briefly unavailable.
@@ -123,19 +166,27 @@ async function showIncomingCall({ callId, from, actionToken, expiresAt }) {
 
   const name = from?.displayName || from?.username || 'Unknown caller';
 
-  // If a window is already open AND showing this call, the in-app screen is
-  // handling it; a notification on top would just be noise.
   const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-  const visible = clients.some((c) => c.visibilityState === 'visible');
-  if (visible) {
-    clients.forEach((c) => c.postMessage({ type: 'push-incoming-call', callId, from }));
-    return;
-  }
 
-  await self.registration.showNotification(`${name} is calling`, {
+  // Tell every open client, not only the visible one. A backgrounded page — app
+  // switched away, or the screen locked with it still loaded — is the only
+  // thing that can play the actual ringtone, because a service worker has no
+  // audio API of any kind. Its socket may also have been throttled into missing
+  // `call:incoming` entirely, so this doubles as a nudge to reconnect.
+  clients.forEach((c) => c.postMessage({
+    type: 'push-incoming-call', callId, from, expiresAt,
+  }));
+
+  // A visible client is already showing the call screen and ringing; a
+  // notification stacked on top of it would just be noise.
+  if (clients.some((c) => c.visibilityState === 'visible')) return;
+
+  cancelledCalls.delete(callId);
+
+  const ring = () => self.registration.showNotification(`${name} is calling`, {
     body: from?.username ? `@${from.username} · gians voice call` : 'gians voice call',
     tag: CALL_TAG,              // collapses duplicates across devices/retries
-    renotify: true,
+    renotify: true,             // re-alert on every repost rather than update silently
     requireInteraction: true,   // stays on screen until acted on
     silent: false,
     // Long buzz pattern, closer to a ringtone than a message alert.
@@ -148,21 +199,59 @@ async function showIncomingCall({ callId, from, actionToken, expiresAt }) {
     ],
   });
 
-  // Ring for as long as the server will keep the call alive, then self-clear.
-  if (expiresAt) {
-    const remaining = Math.max(0, expiresAt - Date.now());
-    setTimeout(() => clearCallNotification({ callId }).catch(() => {}), remaining);
+  await ring();
+
+  // Keep re-alerting until the call dies, the worker's budget runs out, or the
+  // user gets there first.
+  const expiry = expiresAt || (Date.now() + RING_MAX_MS);
+  const ringUntil = Math.min(Date.now() + RING_MAX_MS, expiry);
+
+  while (Date.now() + RING_REPEAT_MS < ringUntil) {
+    await sleep(RING_REPEAT_MS);
+
+    // Answered elsewhere or cancelled by the caller — a cancel push landed and
+    // set this while we were sleeping.
+    if (cancelledCalls.has(callId)) return;
+
+    // The user opened the app: the in-app call screen owns the ring from here,
+    // and a notification re-alerting over it would fight with the ringtone.
+    const live = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (live.some((c) => c.visibilityState === 'visible')) return;
+
+    await ring();
   }
+
+  // Only tidy up if the call itself is actually over. Stopping because we hit
+  // the worker budget is not the same thing — the call may still have seconds
+  // left, and dismissing a live call's notification would strip the user's only
+  // way to answer it.
+  if (Date.now() >= expiry) await clearCallNotification({ callId });
 }
 
 async function clearCallNotification({ callId }) {
+  // Break any ring loop still re-alerting for this call. Without this the loop
+  // would keep re-posting the notification it is being asked to dismiss, and
+  // win, because it reposts faster than a single close can take effect.
+  if (callId) cancelledCalls.add(callId);
+
   const notifications = await self.registration.getNotifications({ tag: CALL_TAG });
   notifications
     .filter((n) => !callId || n.data?.callId === callId)
     .forEach((n) => n.close());
+
+  // A backgrounded page may be ringing off the back of the earlier push, with a
+  // socket too throttled to have heard the cancellation. Dismissing only the
+  // notification would leave it ringing for a call the caller already gave up
+  // on. The client ignores this unless that push-driven ring is what is playing.
+  const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  clients.forEach((c) => c.postMessage({ type: 'push-call-cancelled', callId }));
 }
 
 async function showMissedCall({ callId, from }) {
+  // A missed-call notice alongside a still-ringing one is contradictory, and on
+  // a timeout the server sends this without a preceding cancel.
+  await clearCallNotification({ callId });
+
   const name = from?.displayName || from?.username || 'Someone';
   await self.registration.showNotification(`Missed call from ${name}`, {
     body: 'Tap to call back',
@@ -180,6 +269,12 @@ self.addEventListener('notificationclick', (event) => {
   const { notification, action } = event;
   const data = notification.data || {};
   notification.close();
+
+  // The ring loop is very likely still running and would repost this
+  // notification within seconds — re-alerting over a call the user has just
+  // answered, or one they have explicitly declined. Closing alone does not stop
+  // it; the loop has to be told.
+  if (data.callId) cancelledCalls.add(data.callId);
 
   if (action === 'reject' && data.actionToken) {
     // Decline without ever opening the app — the token in the payload is

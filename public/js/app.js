@@ -20,6 +20,8 @@
     pendingLaunch: null,
     /** FCM token handed over by the native shell, awaiting a signed-in session. */
     pendingDeviceToken: null,
+    /** Pending "connection unstable" warning, held back in case it recovers. */
+    connectionBlipTimer: null,
     /** True once this page has a live signed-in session (see startSession). */
     sessionActive: false,
     /** Cached location-sharing consent for this user. */
@@ -44,6 +46,27 @@
    * gives up on an unanswered call well before this).
    */
   const PUSH_RING_GRACE_MS = 15000;
+
+  /**
+   * How long the connection must stay `disconnected` before the user is told.
+   *
+   * `iceConnectionState` reports `disconnected` whenever a few consent checks
+   * (RFC 7675) go unanswered, and recovers by itself a second or two later —
+   * the spec treats it as transient, not as a failure.
+   *
+   * This app makes those blips MORE likely rather than less: DTX stops sending
+   * packets during silence, so an ordinary pause in the conversation briefly
+   * looks like a dead path. Announcing it on arrival put "reconnecting" on
+   * screen mid-call over perfectly healthy wifi. `failed` is still reported
+   * immediately — that one is real.
+   */
+  const CONNECTION_BLIP_GRACE_MS = 2500;
+
+  function clearConnectionBlip() {
+    if (!state.connectionBlipTimer) return;
+    clearTimeout(state.connectionBlipTimer);
+    state.connectionBlipTimer = null;
+  }
 
   const remoteAudio = $('#remote-audio');
 
@@ -1216,11 +1239,27 @@
         if (!call) return;
 
         if (connState === 'connected' || connState === 'completed') {
+          clearConnectionBlip();
           if (call.status !== 'active') onCallConnected();
           window.UI.setPeerState('');
         } else if (connState === 'disconnected') {
-          window.UI.setPeerState('Connection unstable — reconnecting…');
+          // Wait it out rather than announcing it. See CONNECTION_BLIP_GRACE_MS:
+          // most of these recover before the user could have finished reading
+          // the warning, and a call that says it is reconnecting while the audio
+          // never faltered reads as a broken app.
+          if (!state.connectionBlipTimer) {
+            state.connectionBlipTimer = setTimeout(() => {
+              state.connectionBlipTimer = null;
+              // Still on a call, and nothing since said we recovered.
+              if (window.Store.state.call) {
+                window.UI.setPeerState('Connection unstable — reconnecting…');
+              }
+            }, CONNECTION_BLIP_GRACE_MS);
+          }
         } else if (connState === 'failed') {
+          // Not transient: ICE has given up, and attemptIceRestart is already
+          // running. Worth saying immediately.
+          clearConnectionBlip();
           window.UI.setPeerState('Reconnecting…');
         }
       },
@@ -1443,6 +1482,10 @@
       clearTimeout(state.pushRing.timer);
       state.pushRing = null;
     }
+
+    // A blip warning armed during the call that just ended must not surface on
+    // the next one.
+    clearConnectionBlip();
 
     window.AudioKit.stopRinging();
     window.AudioKit.vibrate(0);

@@ -78,5 +78,31 @@ services:
       - key: VAPID_SUBJECT
         sync: false
 
+      # Firebase Cloud Messaging — reaches the native Android app, the only
+      # path that can raise a full-screen ringing call screen on a closed
+      # phone. Optional: without these the app still runs and browsers still
+      # ring through Web Push above.
+      #
+      # Declared here even though the values are set in the dashboard: this
+      # service is Blueprint-managed, so a variable the blueprint does not know
+      # about can be dropped on the next sync — silently ending full-screen
+      # calls with nothing in the logs to explain it.
+      #
+      # From the Firebase service-account JSON. FCM_PRIVATE_KEY must be pasted
+      # as ONE line with its \n escapes intact.
+      - key: FCM_PROJECT_ID
+        sync: false
+      - key: FCM_CLIENT_EMAIL
+        sync: false
+      - key: FCM_PRIVATE_KEY
+        sync: false
+
+      # Published at /.well-known/assetlinks.json so Chrome runs the Android
+      # app full-screen rather than showing a URL bar over it.
+      - key: ANDROID_PACKAGE_NAME
+        sync: false
+      - key: ANDROID_CERT_FINGERPRINTS
+        sync: false
+
       - key: RING_TIMEOUT_MS
         value: 45000

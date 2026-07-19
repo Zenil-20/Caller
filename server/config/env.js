@@ -74,6 +74,31 @@ module.exports = {
     subject: read('VAPID_SUBJECT', { fallback: 'mailto:admin@example.com' }),
   },
 
+  /**
+   * Firebase service-account credentials, used to reach the native Android app.
+   * Optional: without them the app still runs and browsers still ring, they just
+   * do not get the full-screen call screen.
+   */
+  fcm: {
+    projectId: read('FCM_PROJECT_ID', { fallback: '' }),
+    clientEmail: read('FCM_CLIENT_EMAIL', { fallback: '' }),
+    // A PEM key cannot survive a single-line .env intact, so it is stored with
+    // escaped newlines and restored here. Without this the RS256 signature fails
+    // with an opaque error that looks nothing like "your key is malformed".
+    privateKey: read('FCM_PRIVATE_KEY', { fallback: '' }).replace(/\\n/g, '\n'),
+  },
+
+  /**
+   * SHA-256 fingerprints of the Android signing certificate, published at
+   * /.well-known/assetlinks.json so Chrome trusts the app to open this domain
+   * without a URL bar. Comma-separated — a release and a debug build have
+   * different fingerprints and both are usually wanted during development.
+   */
+  android: {
+    packageName: read('ANDROID_PACKAGE_NAME', { fallback: '' }),
+    certFingerprints: list('ANDROID_CERT_FINGERPRINTS'),
+  },
+
   call: {
     ringTimeoutMs: Number(read('RING_TIMEOUT_MS', { fallback: '45000' })),
   },

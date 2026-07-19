@@ -143,6 +143,10 @@ window.API = (function api() {
     subscribePush: (subscription) => request('/push/subscribe', { method: 'POST', body: { subscription } }),
     unsubscribePush: (endpoint) => request('/push/subscribe', { method: 'DELETE', body: { endpoint } }),
 
+    // The native Android shell hands its FCM token to this page on launch; the
+    // page registers it, so the shell never needs a session of its own.
+    registerDevice: (token, appVersion) => request('/push/device', { method: 'POST', body: { token, platform: 'android', appVersion } }),
+
     // --- location ---------------------------------------------------------
     listLocations: () => request('/location'),
     getLocationSharing: () => request('/location/sharing'),

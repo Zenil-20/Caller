@@ -232,7 +232,7 @@ async function clearCallNotification({ callId }) {
   // Break any ring loop still re-alerting for this call. Without this the loop
   // would keep re-posting the notification it is being asked to dismiss, and
   // win, because it reposts faster than a single close can take effect.
-  if (callId) cancelledCalls.add(callId);
+  markCancelled(callId);
 
   const notifications = await self.registration.getNotifications({ tag: CALL_TAG });
   notifications
@@ -274,7 +274,7 @@ self.addEventListener('notificationclick', (event) => {
   // notification within seconds — re-alerting over a call the user has just
   // answered, or one they have explicitly declined. Closing alone does not stop
   // it; the loop has to be told.
-  if (data.callId) cancelledCalls.add(data.callId);
+  markCancelled(data.callId);
 
   if (action === 'reject' && data.actionToken) {
     // Decline without ever opening the app — the token in the payload is

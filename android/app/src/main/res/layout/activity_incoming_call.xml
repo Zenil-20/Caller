@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The ringing call screen. Laid out like a native dialler on purpose: the caller
+  high on the screen where a glance finds it, and the two actions far apart at
+  the bottom so a half-awake thumb cannot decline a call it meant to answer.
+-->
+<androidx.constraintlayout.widget.ConstraintLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/surface"
+    android:fitsSystemWindows="true">
+
+    <TextView
+        android:id="@+id/incomingLabel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="72dp"
+        android:letterSpacing="0.15"
+        android:text="@string/incoming_call"
+        android:textAllCaps="true"
+        android:textColor="@color/on_surface_muted"
+        android:textSize="13sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/callerAvatar"
+        android:layout_width="112dp"
+        android:layout_height="112dp"
+        android:layout_marginTop="32dp"
+        android:background="@drawable/bg_avatar"
+        android:gravity="center"
+        android:textColor="@color/on_surface"
+        android:textSize="44sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/incomingLabel"
+        tools:text="Z" />
+
+    <TextView
+        android:id="@+id/callerName"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="28dp"
+        android:layout_marginStart="32dp"
+        android:layout_marginEnd="32dp"
+        android:gravity="center"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:textColor="@color/on_surface"
+        android:textSize="30sp"
+        android:textStyle="bold"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/callerAvatar"
+        tools:text="Zenil Kapadia" />
+
+    <TextView
+        android:id="@+id/callerUsername"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:textColor="@color/on_surface_muted"
+        android:textSize="16sp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/callerName"
+        tools:text="\@zenil20" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/declineButton"
+        android:layout_width="76dp"
+        android:layout_height="76dp"
+        android:layout_marginBottom="88dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:contentDescription="@string/decline"
+        app:backgroundTint="@color/decline_red"
+        app:cornerRadius="38dp"
+        app:icon="@drawable/ic_call_end"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:iconSize="32dp"
+        app:iconTint="@color/on_surface"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/answerButton"
+        app:layout_constraintHorizontal_chainStyle="spread"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/answerButton"
+        android:layout_width="76dp"
+        android:layout_height="76dp"
+        android:layout_marginBottom="88dp"
+        android:insetTop="0dp"
+        android:insetBottom="0dp"
+        android:contentDescription="@string/answer"
+        app:backgroundTint="@color/answer_green"
+        app:cornerRadius="38dp"
+        app:icon="@drawable/ic_call"
+        app:iconGravity="textStart"
+        app:iconPadding="0dp"
+        app:iconSize="32dp"
+        app:iconTint="@color/on_surface"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toEndOf="@id/declineButton" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:text="@string/decline"
+        android:textColor="@color/on_surface_muted"
+        android:textSize="13sp"
+        app:layout_constraintEnd_toEndOf="@id/declineButton"
+        app:layout_constraintStart_toStartOf="@id/declineButton"
+        app:layout_constraintTop_toBottomOf="@id/declineButton" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:text="@string/answer"
+        android:textColor="@color/on_surface_muted"
+        android:textSize="13sp"
+        app:layout_constraintEnd_toEndOf="@id/answerButton"
+        app:layout_constraintStart_toStartOf="@id/answerButton"
+        app:layout_constraintTop_toBottomOf="@id/answerButton" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>

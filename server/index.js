@@ -7,6 +7,7 @@ const db = require('./config/db');
 const env = require('./config/env');
 const presence = require('./services/presenceService');
 const pushService = require('./services/pushService');
+const fcmService = require('./services/fcmService');
 const logger = require('./utils/logger');
 
 async function main() {
@@ -17,6 +18,10 @@ async function main() {
 
   // Web Push lets an incoming call ring a device whose browser is closed.
   pushService.init();
+
+  // FCM reaches the native Android app, which — unlike a service worker — can
+  // raise a full-screen ringing call screen over the lock screen.
+  fcmService.init();
 
   const app = createApp();
   const server = http.createServer(app);

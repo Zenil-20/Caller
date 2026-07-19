@@ -6,7 +6,7 @@ const registerCallHandlers = require('./callHandlers');
 const registerLocationHandlers = require('./locationHandlers');
 const presence = require('../services/presenceService');
 const callService = require('../services/callService');
-const pushService = require('../services/pushService');
+const callNotifier = require('../services/callNotifier');
 const env = require('../config/env');
 const logger = require('../utils/logger');
 
@@ -93,13 +93,13 @@ function createSocketServer(httpServer) {
           // The callee may still have a ringing notification on a locked
           // phone. Every other termination path clears it; this one must too,
           // or the device rings on with no way to dismiss it.
-          await pushService.sendCallCancelled(calleeId, { callId, reason: 'peer-disconnected' })
+          await callNotifier.sendCallCancelled(calleeId, { callId, reason: 'peer-disconnected' })
             .catch((err) => logger.error('Failed to clear call notification', err));
 
           const { MISSED, CANCELLED } = callService.CALL_STATUS;
           if (call.status === MISSED || call.status === CANCELLED) {
             io.to(`user:${calleeId}`).emit('call:missed', { callId });
-            await pushService.sendMissedCall(calleeId, { callId })
+            await callNotifier.sendMissedCall(calleeId, { callId })
               .catch((err) => logger.error('Failed to send missed-call push', err));
           }
         } catch (err) {

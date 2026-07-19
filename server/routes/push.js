@@ -28,4 +28,14 @@ router.post(
 router.post('/subscribe', requireAuth, controller.subscribe);
 router.delete('/subscribe', requireAuth, controller.unsubscribe);
 
+// The native Android app's FCM token, registered by the web page it launches.
+router.post(
+  '/device',
+  requireAuth,
+  [body('token').isString().notEmpty().isLength({ max: 4096 })],
+  validate,
+  controller.registerDevice,
+);
+router.delete('/device', requireAuth, controller.unregisterDevice);
+
 module.exports = router;

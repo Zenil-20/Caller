@@ -1,6 +1,7 @@
 'use strict';
 
 const pushService = require('../services/pushService');
+const fcmService = require('../services/fcmService');
 const callService = require('../services/callService');
 const asyncHandler = require('../utils/asyncHandler');
 const { verifyCallActionToken } = require('../utils/jwt');
@@ -25,6 +26,27 @@ const subscribe = asyncHandler(async (req, res) => {
 
 const unsubscribe = asyncHandler(async (req, res) => {
   await pushService.removeSubscription(req.body.endpoint);
+  res.status(204).end();
+});
+
+/**
+ * Registers the native Android app's FCM token against the signed-in user.
+ *
+ * The token is minted by the app but registered from the web page it launches,
+ * because that page is where the session already lives. Doing it this way keeps
+ * every credential out of the native shell — it never sees a password, an access
+ * token, or a refresh token, and needs no login screen of its own.
+ */
+const registerDevice = asyncHandler(async (req, res) => {
+  await fcmService.saveToken(req.userId, req.body.token, {
+    platform: req.body.platform,
+    appVersion: req.body.appVersion,
+  });
+  res.status(201).json({ ok: true, devices: await fcmService.countFor(req.userId) });
+});
+
+const unregisterDevice = asyncHandler(async (req, res) => {
+  await fcmService.removeToken(req.body.token);
   res.status(204).end();
 });
 
@@ -78,4 +100,6 @@ const callAction = asyncHandler(async (req, res) => {
   }
 });
 
-module.exports = { publicKey, subscribe, unsubscribe, callAction };
+module.exports = {
+  publicKey, subscribe, unsubscribe, callAction, registerDevice, unregisterDevice,
+};

@@ -54,6 +54,37 @@ function createApp() {
 
   app.use('/api', routes);
 
+  /**
+   * Digital Asset Links: proves this domain and the Android app belong to the
+   * same owner. Chrome refuses to run a Trusted Web Activity full-screen without
+   * it and falls back to showing a URL bar, which gives the game away that the
+   * "app" is a web page.
+   *
+   * Generated rather than served as a static file so the fingerprints come from
+   * the environment — a debug build and a release build sign differently, and
+   * committing either one to the repo invites shipping the wrong one.
+   *
+   * Registered ahead of the SPA catch-all, which would otherwise answer this
+   * with index.html and leave verification failing for a reason nothing logs.
+   */
+  app.get('/.well-known/assetlinks.json', (_req, res) => {
+    const { packageName, certFingerprints } = env.android;
+
+    if (!packageName || !certFingerprints.length) {
+      res.status(404).json({ error: 'Android app link is not configured' });
+      return;
+    }
+
+    res.json([{
+      relation: ['delegate_permission/common.handle_all_urls'],
+      target: {
+        namespace: 'android_app',
+        package_name: packageName,
+        sha256_cert_fingerprints: certFingerprints,
+      },
+    }]);
+  });
+
   app.use(express.static(path.join(__dirname, '..', 'public'), {
     maxAge: env.isProduction ? '1h' : 0,
     etag: true,

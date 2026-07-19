@@ -18,6 +18,8 @@
     contactIds: new Set(),
     /** Set when the app was opened from a notification action. */
     pendingLaunch: null,
+    /** FCM token handed over by the native shell, awaiting a signed-in session. */
+    pendingDeviceToken: null,
     /** True once this page has a live signed-in session (see startSession). */
     sessionActive: false,
     /** Cached location-sharing consent for this user. */
@@ -121,6 +123,10 @@
     // "Answer" on the notification that opened this page.
     handleLaunchIntent();
 
+    // Fire-and-forget: nothing below depends on it, and making sign-in wait on
+    // a network round trip for the notification path would be the wrong trade.
+    registerDeviceToken();
+
     connectSignalling();
     await Promise.all([loadContacts(), loadRecents(), loadIceServers()]);
 
@@ -151,10 +157,42 @@
     const callId = params.get('callId');
     const action = params.get('action');
 
-    if (callId) {
+    // The native Android shell appends its FCM token on every launch. It cannot
+    // register the token itself without shipping a login of its own, so it hands
+    // it to this page, which already has a session. Held until the session is
+    // confirmed — the endpoint needs auth, and on a cold start we are not signed
+    // in yet.
+    const fcmToken = params.get('fcmToken');
+    if (fcmToken) {
+      state.pendingDeviceToken = { token: fcmToken, appVersion: params.get('appVersion') || undefined };
+    }
+
+    if (callId || fcmToken) {
       // Clean the URL so a refresh does not re-trigger the intent.
       window.history.replaceState({}, '', window.location.pathname);
-      state.pendingLaunch = { callId, action };
+    }
+
+    if (callId) state.pendingLaunch = { callId, action };
+  }
+
+  /**
+   * Registers the native shell's FCM token against this session, so the server
+   * can wake the phone into a full-screen call screen.
+   *
+   * Re-registering on every launch is intentional: FCM rotates tokens, and the
+   * server upserts, so this is how a rotated token gets noticed at all.
+   */
+  async function registerDeviceToken() {
+    const pending = state.pendingDeviceToken;
+    if (!pending) return;
+    state.pendingDeviceToken = null;
+
+    try {
+      await window.API.registerDevice(pending.token, pending.appVersion);
+    } catch (err) {
+      // Non-fatal: calls still ring in-app and through Web Push. Only the
+      // full-screen path is lost, and the next launch retries.
+      console.warn('Device token registration failed', err);
     }
   }
 

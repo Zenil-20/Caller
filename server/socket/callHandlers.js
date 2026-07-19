@@ -4,7 +4,7 @@ const Call = require('../models/Call');
 const callService = require('../services/callService');
 const presence = require('../services/presenceService');
 const iceService = require('../services/iceService');
-const pushService = require('../services/pushService');
+const callNotifier = require('../services/callNotifier');
 const env = require('../config/env');
 const { signCallActionToken } = require('../utils/jwt');
 const logger = require('../utils/logger');
@@ -76,8 +76,8 @@ module.exports = function registerCallHandlers(io, socket) {
           });
 
           // Stop the phone ringing, then leave a missed-call notice behind.
-          await pushService.sendCallCancelled(String(timedOut.callee), { callId: call.callId, reason: 'no-answer' });
-          await pushService.sendMissedCall(String(timedOut.callee), { callId: call.callId, from: socket.user });
+          await callNotifier.sendCallCancelled(String(timedOut.callee), { callId: call.callId, reason: 'no-answer' });
+          await callNotifier.sendMissedCall(String(timedOut.callee), { callId: call.callId, from: socket.user });
         }
       } catch (err) {
         logger.error('Ring timeout failed', err);
@@ -97,13 +97,16 @@ module.exports = function registerCallHandlers(io, socket) {
       // off, the browser closed, or the tab backgrounded still rings. Devices
       // already showing the in-app screen collapse this onto the same
       // notification tag, so the user never sees it twice.
-      pushService.sendIncomingCall(calleeId, {
+      callNotifier.sendIncomingCall(calleeId, {
         callId: call.callId,
         from: socket.user,
         actionToken: signCallActionToken({ userId: calleeId, callId: call.callId }, 120),
         expiresAt: Date.now() + env.call.ringTimeoutMs,
       }).then((result) => {
-        if (wakeByPush && result.sent === 0) {
+        // Reaching the callee on either transport counts; a user with only the
+        // Android app installed has no web-push subscription at all, and warning
+        // about that would be noise.
+        if (wakeByPush && result.web.sent + result.native.sent === 0) {
           logger.warn(`Call ${call.callId}: callee offline and no push reached them.`);
         }
       }).catch((err) => logger.error('Failed to send incoming-call push', err));
@@ -125,7 +128,7 @@ module.exports = function registerCallHandlers(io, socket) {
     // Silence this user's other devices — both the in-app screen and any
     // notification still ringing on another phone.
     socket.to(`user:${userId}`).emit('call:handled-elsewhere', { callId });
-    pushService.sendCallCancelled(userId, { callId, reason: 'answered' })
+    callNotifier.sendCallCancelled(userId, { callId, reason: 'answered' })
       .catch((err) => logger.error('Failed to clear call notification', err));
 
     return { callId, answeredAt: call.answeredAt, iceServers: iceService.getIceServers(userId) };
@@ -136,7 +139,7 @@ module.exports = function registerCallHandlers(io, socket) {
 
     toUser(String(call.caller), 'call:rejected', { callId, reason: call.endReason });
     socket.to(`user:${userId}`).emit('call:handled-elsewhere', { callId });
-    pushService.sendCallCancelled(userId, { callId, reason: 'declined' })
+    callNotifier.sendCallCancelled(userId, { callId, reason: 'declined' })
       .catch((err) => logger.error('Failed to clear call notification', err));
 
     return { callId, status: call.status };
@@ -158,12 +161,12 @@ module.exports = function registerCallHandlers(io, socket) {
     socket.to(`user:${userId}`).emit('call:ended', payload);
 
     // Caller hung up mid-ring: stop the callee's phone ringing immediately.
-    pushService.sendCallCancelled(String(call.callee), { callId, reason: call.endReason })
+    callNotifier.sendCallCancelled(String(call.callee), { callId, reason: call.endReason })
       .catch((err) => logger.error('Failed to clear call notification', err));
 
     if (call.status === CALL_STATUS.MISSED || call.status === CALL_STATUS.CANCELLED) {
       toUser(String(call.callee), 'call:missed', { callId, from: socket.user });
-      pushService.sendMissedCall(String(call.callee), { callId, from: socket.user })
+      callNotifier.sendMissedCall(String(call.callee), { callId, from: socket.user })
         .catch((err) => logger.error('Failed to send missed-call push', err));
     }
 

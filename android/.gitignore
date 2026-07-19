@@ -1,0 +1,19 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Firebase config for this specific project. Not secret, but it pins the app to
+# one Firebase project, so it stays out of the repo to keep forks from silently
+# messaging someone else's devices.
+google-services.json
+
+# Signing material. A leaked release keystore lets anyone ship an update that
+# Android will accept as genuinely yours.
+*.jks
+*.keystore
+keystore.properties
